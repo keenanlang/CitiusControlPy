@@ -12,7 +12,7 @@ from caproto.server import PVGroup, ioc_arg_parser, pvproperty, run, scan_wrappe
 #########################
 
 class ControlIOC(PVGroup):
-	async def __ainit__(self, async_io):
+	def initialize(self):
 		#Attempt to initialize API
 		try:
 			response = requests.put(self.url + "/detector/command/initialize", json.dumps({"nprbs" : 1}), timeout=5)
@@ -79,15 +79,15 @@ class ControlIOC(PVGroup):
 	
 	@status_check.scan(period=1.0)
 	async def status_check(self, instance, async_io):
-		if await self.DetectorState_RBV.read(ChannelType.STRING) == "Idle":
+		if self.DetectorState_RBV.value == 0:
 			return
 		
-		response = requests.get(self.url + "/filewriter/config/mode")
+		response = requests.get(self.url + "/filewriter/config/mode", timeout=1)
 		
 		if response.json()["value"] == "start":
 			return
 			
-		response = requests.get(self.url + "/filewriter/status/waiting_ntrains")
+		response = requests.get(self.url + "/filewriter/status/waiting_ntrains", timeout=1)
 		
 		if response.json()["value"] == 0:
 			await self.Acquire.write(0)
@@ -128,7 +128,10 @@ IOC Prefix for PVs, default is "citius:". PVs will also have "cam1:" prepended.
 	citius_control.url = 'http://%s:%d' % (args.ip, args.port)
 
 	try:
+		citius_control.initialize()
 		run(citius_control.pvdb, **run_options)
 	except Exception as e:
 		print("Error starting IOC:", e)
+	
+	
 	
