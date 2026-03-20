@@ -34,8 +34,11 @@ class ControlIOC(PVGroup):
 		elif value == 1 and instance.value == 0:
 			# Do Start
 			try:
-				if self.numimages.readback.value <= 0:
+				if int(self.numimages.readback.value) <= 0:
 					raise Exception("NumImages must be > 0")
+					
+				if int(self.numexposures.readback.value) <= 0:
+					raise Exception("NumExposures must be > 0")
 
 				metadata, values = await self.OutputDir.read(ChannelType.STRING)
 				
@@ -43,6 +46,11 @@ class ControlIOC(PVGroup):
 					raise Exception("Must define OutputDir")
 					
 				response = requests.put(self.url + "/filewriter/config/ntrains", json.dumps({"value" : int(self.numimages.readback.value)}), timeout=5)
+				
+				if response.status_code != 200:
+					raise Exception("Non-success response from API: %s" % response.status_code)
+					
+				response = requests.put(self.url + "/detector/config/sum_ntrains", json.dumps({"value" : int(self.numexposures.readback.value)}), timeout=5)
 				
 				if response.status_code != 200:
 					raise Exception("Non-success response from API: %s" % response.status_code)
@@ -83,28 +91,33 @@ class ControlIOC(PVGroup):
 	pair_pvs = get_pv_pair_wrapper(setpoint_suffix='',
 						           readback_suffix='_RBV')
 						
-	numimages = pair_pvs(name="NumImages", value=0)
-	#imagemode = pair_pvs(name="ImageMode", dtype=ChannelType.ENUM, enum_strings=("Normal", "Burst"))
+	numimages    = pair_pvs(name="NumImages", value=0)
+	numexposures = pair_pvs(name="NumExposures", value=0)
+	imagemode = pair_pvs(name="ImageMode", dtype=ChannelType.ENUM, enum_strings=("Uncompressed", "Zstandard", "Bitshuffle+LZ4", "LZ4"))
 	
 	@numimages.setpoint.putter
 	async def numimages(obj, instance, value):
 		await obj.readback.write(value)
+		
+	@numexposures.setpoint.putter
+	async def numexposures(obj, instance, value):
+		await obj.readback.write(value)
 						
-	# @imagemode.setpoint.putter
-	# async def imagemode(obj, instance, value):				
-		# try:
-			# response = requests.put(obj.parent.url + "/detector/config/imaging_mode", json.dumps({"value" : value.lower()}), timeout=5)
+	@imagemode.setpoint.putter
+	async def imagemode(obj, instance, value):				
+		try:
+			response = requests.put(obj.parent.url + "/filewriter/config/compression", json.dumps({"value" : str(value)}), timeout=5)
 		
-			# if response.status_code != 200:
-				# raise SkipWrite("Response Code: " + str(response.status_code))
+			if response.status_code != 200:
+				raise SkipWrite("Response Code: " + str(response.status_code))
 			
-		# except Exception as e:
-			# print(obj.parent.prefix, "ImageMode", e)
-			# raise SkipWrite 
+		except Exception as e:
+			print(obj.parent.prefix, "ImageMode", e)
+			raise SkipWrite 
 		
-		# response = requests.get(obj.parent.url + "/detector/config/imaging_mode")
+		response = requests.get(obj.parent.url + "/filewriter/config/compression")
 			
-		# await obj.readback.write(response.json()["value"].capitalize())
+		await obj.readback.write(str(response.json()["value"]))
 		
 			
 	@status_check.scan(period=1.0)
